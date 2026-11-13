@@ -1,0 +1,333 @@
+-- ==========================================
+-- 0. REMOÇÃO DE TABELAS EXISTENTES (CASO NECESSÁRIO)
+-- ==========================================
+DROP TABLE IF EXISTS sessao_usuario CASCADE;
+DROP TABLE IF EXISTS diagnostico_compatibilidade CASCADE;
+DROP TABLE IF EXISTS relatorio_divergencia CASCADE;
+DROP TABLE IF EXISTS consentimento_usuario CASCADE;
+DROP TABLE IF EXISTS notificacao CASCADE;
+DROP TABLE IF EXISTS requisito_aplicativo CASCADE;
+DROP TABLE IF EXISTS dispositivo CASCADE;
+DROP TABLE IF EXISTS aplicativo CASCADE;
+DROP TABLE IF EXISTS termo_lgpd CASCADE;
+DROP TABLE IF EXISTS usuario CASCADE;
+
+-- Remoção dos ENUMs caso já existam
+DROP TYPE IF EXISTS status_compatibilidade;
+DROP TYPE IF EXISTS status_relatorio;
+DROP TYPE IF EXISTS perfil_usuario;
+DROP TYPE IF EXISTS tipo_requisito;
+
+-- ==========================================
+-- CRIAÇÃO DOS TIPOS ENUM
+-- ==========================================
+CREATE TYPE tipo_requisito AS ENUM ('MINIMO', 'RECOMENDADO');
+CREATE TYPE perfil_usuario AS ENUM ('ADMIN', 'COMUM', 'DESENVOLVEDOR');
+CREATE TYPE status_relatorio AS ENUM ('ABERTO', 'EM_ANALISE', 'RESOLVIDO', 'FECHADO');
+CREATE TYPE status_compatibilidade AS ENUM ('COMPATIVEL', 'INCOMPATIVEL', 'ALERTA');
+
+-- ==========================================
+-- 1. TABELA: usuario
+-- ==========================================
+CREATE TABLE usuario (
+    id_usuario SERIAL PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    email VARCHAR(150) NOT NULL UNIQUE,
+    senha_hash VARCHAR(255) NOT NULL,
+    perfil perfil_usuario NOT NULL,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ==========================================
+-- 2. TABELA: termo_lgpd
+-- ==========================================
+CREATE TABLE termo_lgpd (
+    id_termo_lgpd SERIAL PRIMARY KEY,
+    versao VARCHAR(20) NOT NULL,
+    conteudo TEXT NOT NULL,
+    data_publicacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ==========================================
+-- 3. TABELA: aplicativo
+-- ==========================================
+CREATE TABLE aplicativo (
+    id_aplicativo SERIAL PRIMARY KEY,
+    nome VARCHAR(150) NOT NULL UNIQUE,
+    desenvolvedora VARCHAR(100),
+    descricao TEXT,
+    categoria VARCHAR(50),
+    fk_usuario INT REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ==========================================
+-- 4. TABELA: dispositivo
+-- ==========================================
+CREATE TABLE dispositivo (
+    id_dispositivo SERIAL PRIMARY KEY,
+    fk_usuario INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    modelo VARCHAR(100) NOT NULL,
+    sistema_operacional VARCHAR(50) NOT NULL,
+    versao_so VARCHAR(50) NOT NULL,
+    arquitetura_cpu VARCHAR(50),
+    nucleos_cpu INT,
+    frequencia_cpu_ghz DECIMAL(4,2),
+    memoria_ram_mb INT NOT NULL,
+    armazenamento_total_mb BIGINT NOT NULL,
+    armazenamento_livre_mb BIGINT NOT NULL,
+    coletado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ==========================================
+-- 5. TABELA: requisito_aplicativo
+-- ==========================================
+CREATE TABLE requisito_aplicativo (
+    id_requisito_aplicativo SERIAL PRIMARY KEY,
+    fk_aplicativo INT NOT NULL REFERENCES aplicativo(id_aplicativo) ON DELETE CASCADE,
+    tipo tipo_requisito NOT NULL,
+    so_minimo VARCHAR(50) NOT NULL,
+    versao_so_minima VARCHAR(50) NOT NULL,
+    ram_minima_mb INT NOT NULL,
+    espaco_armazenamento_mb BIGINT NOT NULL,
+    frequencia_cpu_minima_ghz DECIMAL(4,2),
+    nucleos_cpu_minimos INT
+);
+
+-- ==========================================
+-- 6. TABELA: notificacao
+-- ==========================================
+CREATE TABLE notificacao (
+    id_notificacao SERIAL PRIMARY KEY,
+    fk_usuario INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    titulo VARCHAR(150) NOT NULL,
+    mensagem TEXT NOT NULL,
+    lida BOOLEAN DEFAULT FALSE,
+    criada_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ==========================================
+-- 7. TABELA: consentimento_usuario
+-- ==========================================
+CREATE TABLE consentimento_usuario (
+    id_consentimento_usuario SERIAL PRIMARY KEY,
+    fk_usuario INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    fk_termo_lgpd INT NOT NULL REFERENCES termo_lgpd(id_termo_lgpd) ON DELETE CASCADE,
+    aceito BOOLEAN NOT NULL,
+    data_consentimento TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ==========================================
+-- 8. TABELA: relatorio_divergencia
+-- ==========================================
+CREATE TABLE relatorio_divergencia (
+    id_relatorio_divergencia SERIAL PRIMARY KEY,
+    fk_usuario INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    fk_aplicativo INT NOT NULL REFERENCES aplicativo(id_aplicativo) ON DELETE CASCADE,
+    fk_dispositivo INT NOT NULL REFERENCES dispositivo(id_dispositivo) ON DELETE CASCADE,
+    descricao_problema TEXT NOT NULL,
+    status status_relatorio,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ==========================================
+-- 9. TABELA: diagnostico_compatibilidade
+-- ==========================================
+CREATE TABLE diagnostico_compatibilidade (
+    id_diagnostico_compatibilidade SERIAL PRIMARY KEY,
+    fk_usuario INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    fk_dispositivo INT NOT NULL REFERENCES dispositivo(id_dispositivo) ON DELETE CASCADE,
+    fk_aplicativo INT NOT NULL REFERENCES aplicativo(id_aplicativo) ON DELETE CASCADE,
+    status status_compatibilidade NOT NULL,
+    detalhes_falhas JSONB,
+    executado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ==========================================
+-- 10. TABELA: sessao_usuario
+-- ==========================================
+CREATE TABLE sessao_usuario (
+    id_sessao_usuario SERIAL PRIMARY KEY,
+    fk_usuario INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    token_jwt VARCHAR(500) NOT NULL,
+    ip_origem VARCHAR(45),
+    user_agent TEXT,
+    expira_em TIMESTAMP NOT NULL,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ==========================================
+-- SCRIPT DE INSERÇÃO DIDÁTICA (DADOS REALISTAS)
+-- ==========================================
+
+-- 1. USUÁRIO (Com hashes de senha variados e realistas)
+INSERT INTO usuario (nome, email, senha_hash, perfil) VALUES
+('Ana Souza', 'ana.souza@email.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'ADMIN'),
+('Carlos Silva', 'carlos.dev@email.com', '$2y$10$8kR5vN2m1L0p9Q3w5e6r7u8i9o0p1a2s3d4f5g6h7j8k9l0z1x2c3v', 'DESENVOLVEDOR'),
+('Beatriz Lima', 'beatriz.lima@email.com', '$2y$10$3vB2nM1k9L8j7H6g5f4d3s2a1p0o9i8u7y6t5r4e3w2q1z0x9c8v7b', 'COMUM'),
+('Daniel Oliveira', 'daniel.oli@email.com', '$2y$10$5tG7bN4m2V1c0x9z8l7k6j5h4g3f2d1s0a9p8o7i6u5y4t3r2e1w0q', 'COMUM'),
+('Elena Rocha', 'elena.rocha@email.com', '$2y$10$1qA2z3W4s5X6c7D8f9V0gHjKlPoIuYtReWqAsDfGhJkLzXcVbNm', 'DESENVOLVEDOR'),
+('Felipe Santos', 'felipe.santos@email.com', '$2y$10$9p0O9i8U7y6T5r4E3w2Q1a0S9d8F7g6H5j4K3l2Z1x0C9v8B7n6M5', 'COMUM'),
+('Gabriela Costa', 'gabriela.costa@email.com', '$2y$10$4bN5m6L7k8J9h0G1f2D3s4A5p6O7i8U9y0T1r2E3w4Q5a6S7d8F9g', 'ADMIN'),
+('Hugo Almeida', 'hugo.almeida@email.com', '$2y$10$7z8x9c0v1b2n3m4L5k6J7h8G9f0D1s2A3p4O5i6U7y8T9r0E1w2Q3', 'COMUM'),
+('Isabela Martins', 'isabela.martins@email.com', '$2y$10$2w3e4r5t6y7u8i9o0p1a2s3d4f5g6h7j8k9l0z1x2c3v4b5n6m7k8', 'DESENVOLVEDOR'),
+('João Pereira', 'joao.pereira@email.com', '$2y$10$6m5n4b3v2c1x0z9l8k7j6h5g4f3d2s1a0p9o8i7u6y5t4r3e2w1q0', 'COMUM');
+
+-- 2. TERMO LGPD
+INSERT INTO termo_lgpd (versao, conteudo) VALUES
+('v1.0', 'Termo inicial de uso, coleta e privacidade de dados da plataforma em conformidade com a LGPD.'),
+('v1.1', 'Atualização referente ao compartilhamento de dados analíticos com ferramentas de terceiros.'),
+('v1.2', 'Inclusão de diretrizes claras sobre o uso de cookies e armazenamento local no navegador.'),
+('v1.3', 'Revisão geral de conformidade com as novas diretrizes da ANPD brasileira.'),
+('v1.4', 'Ajustes no tempo de retenção e exclusão automática de dados de dispositivos inativos.'),
+('v1.5', 'Inclusão de termos específicos para autorização de envio de notificações push e marketing.'),
+('v1.6', 'Atualização detalhada sobre exclusão definitiva de conta e direito ao esquecimento.'),
+('v1.7', 'Termos específicos para desenvolvedores terceirizados cadastrados na plataforma.'),
+('v1.8', 'Novas políticas de segurança digital, requisitos de senhas fortes e autenticação em etapas.'),
+('v1.9', 'Versão atualizada vigente dos termos gerais de serviço e política de privacidade.');
+
+-- 3. APLICATIVO
+INSERT INTO aplicativo (nome, desenvolvedora, descricao, categoria, fk_usuario) VALUES
+('Gestão Financeira Pessoal', 'Fintech BR Ltda', 'Aplicativo completo para controle de gastos diários, orçamento mensal e investimentos.', 'Finanças', 2),
+('FitLife Tracker', 'HealthTech Solutions', 'Monitoramento inteligente de passos, calorias, ingestão de água e treinos físicos.', 'Saúde e Bem-estar', 5),
+('TaskMaster Pro', 'Productivity Co.', 'Gerenciador de tarefas avançado e controle de projetos em equipes ágeis.', 'Produtividade', 9),
+('Receitas do Chef', 'Culinary Apps', 'Livro digital interativo de receitas culinárias rápidas e econômicas.', 'Estilo de Vida', 2),
+('Aprenda Inglês Fácil', 'EdTech Global', 'Plataforma de aprendizado de idiomas com inteligência artificial conversacional.', 'Educação', 5),
+('CityBus Horários', 'Mobility Solutions', 'Consulta em tempo real de linhas, itinerários e horários de ônibus urbanos.', 'Transporte', 9),
+('CryptoWallet BR', 'BlockDevs Corp', 'Carteira digital descentralizada para acompanhamento de criptoativos e mercado.', 'Finanças', 2),
+('Cinema Agora', 'Entretel Inc.', 'Guia completo de filmes em cartaz, sessões próximas e compra rápida de ingressos.', 'Entretenimento', 5),
+('EcoRecicla', 'GreenSoft Ltda', 'Guia prático de localização de pontos de coleta seletiva e reciclagem urbana.', 'Utilitários', 9),
+('WeatherNow', 'ClimaTempo Corp', 'Previsão do tempo meteorológica hiper-local e precisa por geolocalização.', 'Clima', 2);
+
+-- 4. DISPOSITIVO
+INSERT INTO dispositivo (fk_usuario, modelo, sistema_operacional, versao_so, arquitetura_cpu, nucleos_cpu, frequencia_cpu_ghz, memoria_ram_mb, armazenamento_total_mb, armazenamento_livre_mb) VALUES
+(3, 'Galaxy S23 Ultra', 'Android', '14.0', 'x86_64', 8, 3.20, 8192, 256000, 65000),
+(4, 'iPhone 14 Pro', 'iOS', '16.5', 'ARM64', 6, 3.10, 6144, 128000, 42000),
+(6, 'Moto G84', 'Android', '13.0', 'x86_64', 8, 2.20, 8192, 256000, 150000),
+(8, 'Redmi Note 12', 'Android', '13.0', 'x86_64', 8, 2.80, 6144, 128000, 30000),
+(3, 'iPhone 15 Pro Max', 'iOS', '17.0', 'ARM64', 6, 3.70, 8192, 512000, 380000),
+(4, 'Galaxy A54 5G', 'Android', '14.0', 'x86_64', 8, 2.40, 8192, 128000, 60000),
+(6, 'Pixel 7', 'Android', '14.0', 'x86_64', 8, 2.85, 8192, 128000, 75000),
+(8, 'iPhone 13', 'iOS', '15.8', 'ARM64', 6, 3.10, 4096, 128000, 15000),
+(3, 'Xperia 1 V', 'Android', '13.0', 'x86_64', 8, 3.00, 12288, 256000, 110000),
+(4, 'Galaxy Z Flip5', 'Android', '14.0', 'x86_64', 8, 3.36, 8192, 256000, 95000);
+
+-- 5. REQUISITO APLICATIVO
+INSERT INTO requisito_aplicativo (fk_aplicativo, tipo, so_minimo, versao_so_minima, ram_minima_mb, espaco_armazenamento_mb, frequencia_cpu_minima_ghz, nucleos_cpu_minimos) VALUES
+(1, 'MINIMO', 'Android', '10.0', 2048, 512000, 1.60, 4),
+(1, 'RECOMENDADO', 'Android', '13.0', 4096, 1024000, 2.20, 8),
+(2, 'MINIMO', 'iOS', '15.0', 3072, 512000, 2.00, 6),
+(2, 'RECOMENDADO', 'iOS', '16.5', 6144, 2048000, 3.00, 6),
+(3, 'MINIMO', 'Android', '11.0', 2048, 256000, 1.80, 4),
+(5, 'MINIMO', 'Android', '12.0', 4096, 1024000, 2.00, 8),
+(7, 'RECOMENDADO', 'Android', '14.0', 8192, 4096000, 3.20, 8),
+(8, 'MINIMO', 'iOS', '14.0', 2048, 256000, 1.60, 4),
+(9, 'MINIMO', 'Android', '10.0', 2048, 128000, 1.50, 2),
+(10, 'RECOMENDADO', 'Android', '13.0', 4096, 512000, 2.00, 4);
+
+-- 6. NOTIFICACAO
+INSERT INTO notificacao (fk_usuario, titulo, mensagem, lida) VALUES
+(3, 'Bem-vindo ao Sistema!', 'Olá Beatriz, sua conta foi criada com sucesso em nossa plataforma.', TRUE),
+(4, 'Alerta de Segurança', 'Detectamos uma tentativa de login em um novo dispositivo desconhecido.', FALSE),
+(6, 'Novo Aplicativo na Loja', 'Confira o lançamento do aplicativo FitLife Tracker na nossa vitrine.', TRUE),
+(8, 'Atualização de Termos', 'Os termos de uso e políticas de privacidade da LGPD foram atualizados.', FALSE),
+(3, 'Relatório Respondido', 'Seu ticket de suporte sobre divergência de dados foi analisado pela equipe.', TRUE),
+(4, 'Dica de Produtividade', 'Experimente baixar o aplicativo Gestão Financeira Pessoal hoje mesmo.', FALSE),
+(6, 'Confirmação de E-mail', 'Por favor, clique no link enviado para confirmar seu endereço de e-mail.', TRUE),
+(8, 'Pouco Espaço Livre', 'Notamos que seu dispositivo está com o armazenamento interno quase cheio.', FALSE),
+(3, 'Manutenção Programada', 'Avisamos que o sistema ficará temporariamente fora do ar neste domingo.', TRUE),
+(4, 'Parabéns pela Jornada!', 'Você completou 1 ano de uso ativo dos nossos serviços de inteligência.', FALSE);
+
+-- 7. CONSENTIMENTO_USUARIO
+INSERT INTO consentimento_usuario (fk_usuario, fk_termo_lgpd, aceito) VALUES
+(3, 1, TRUE),
+(4, 2, TRUE),
+(6, 3, TRUE),
+(8, 4, FALSE),
+(3, 5, TRUE),
+(4, 6, TRUE),
+(6, 7, TRUE),
+(8, 8, TRUE),
+(3, 9, TRUE),
+(4, 10, FALSE);
+
+-- 8. RELATORIO_DIVERGENCIA
+INSERT INTO relatorio_divergencia (fk_usuario, fk_aplicativo, fk_dispositivo, descricao_problema, status) VALUES
+(3, 1, 1, 'O aplicativo fecha inesperadamente ao tentar cadastrar uma despesa com anexo.', 'ABERTO'),
+(4, 2, 2, 'A contagem de passos diários não sincroniza corretamente em segundo plano.', 'EM_ANALISE'),
+(6, 3, 3, 'Não está sendo possível anexar arquivos PDF de tamanho médio nas tarefas.', 'RESOLVIDO'),
+(8, 4, 4, 'As imagens ilustrativas das receitas culinárias estão carregando com baixa resolução.', 'FECHADO'),
+(3, 5, 5, 'O áudio interativo da aula de conversação em inglês falha no meio da reprodução.', 'ABERTO'),
+(4, 6, 6, 'Os horários informados para a linha de ônibus urbana principal estão desatualizados.', 'EM_ANALISE'),
+(6, 7, 7, 'Ocorre erro de timeout ao tentar buscar a cotação atual das principais criptomoedas.', 'RESOLVIDO'),
+(8, 8, 8, 'O ingresso comprado via app não gerou o QR Code necessário na carteira digital.', 'ABERTO'),
+(3, 9, 9, 'O mapa interativo de pontos de coleta seletiva não localiza a posição atual do GPS.', 'EM_ANALISE'),
+(4, 10, 10, 'A previsão meteorológica de chuva diverge totalmente da realidade da região.', 'FECHADO');
+
+-- 9. DIAGNOSTICO_COMPATIBILIDADE
+INSERT INTO diagnostico_compatibilidade (fk_usuario, fk_dispositivo, fk_aplicativo, status, detalhes_falhas) VALUES
+(3, 1, 1, 'COMPATIVEL', '{"motivo": "Nenhum impedimento encontrado, hardware ideal."}'),
+(4, 2, 2, 'COMPATIVEL', '{"motivo": "Hardware atende com folga a todos os requisitos recomendados."}'),
+(6, 3, 3, 'ALERTA', '{"motivo": "Memória RAM ligeiramente abaixo do recomendado, mas executável."}'),
+(8, 4, 4, 'INCOMPATIVEL', '{"motivo": "Versão do sistema operacional do dispositivo está desatualizada."}'),
+(3, 5, 5, 'COMPATIVEL', '{"motivo": "Dispositivo topo de linha, performance de execução excelente."}'),
+(4, 6, 6, 'COMPATIVEL', '{"motivo": "Todos os requisitos de hardware e software foram atendidos."}'),
+(6, 7, 7, 'ALERTA', '{"motivo": "Espaço de armazenamento livre interno em nível crítico."}'),
+(8, 8, 8, 'COMPATIVEL', '{"motivo": "Dispositivo plenamente compatível com o aplicativo."}'),
+(3, 9, 9, 'COMPATIVEL', '{"motivo": "Arquitetura de hardware e processador totalmente otimizados."}'),
+(4, 10, 10, 'INCOMPATIVEL', '{"motivo": "Frequência de clock da CPU abaixo do mínimo exigido pelo aplicativo."}');
+
+-- 10. SESSAO_USUARIO
+INSERT INTO sessao_usuario (fk_usuario, token_jwt, ip_origem, user_agent, expira_em) VALUES
+(1, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsInJvbGUiOiJBRE1JTiIsImlhdCI6MTcwMDAwMDAwMH0.sig_ana', '192.168.1.10', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0', NOW() + INTERVAL '7 days'),
+(2, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjIsInJvbGUiOiJERVNFTlZPTHZFRE9SIiwiaWF0IjoxNzAwMDAwMDAwfQ.sig_carlos', '192.168.1.15', 'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0', NOW() + INTERVAL '7 days'),
+(3, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsInJvbGUiOiJDT01VTSIsImlhdCI6MTcwMDAwMDAwMH0.sig_beatriz', '192.168.1.20', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) Mobile/15E148', NOW() + INTERVAL '7 days'),
+(4, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjQsInJvbGUiOiJDT01VTSIsImlhdCI6MTcwMDAwMDAwMH0.sig_daniel', '192.168.1.25', 'Mozilla/5.0 (Linux; Android 14; SM-A546E) Mobile Safari/537.36', NOW() + INTERVAL '7 days'),
+(5, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjUsInJvbGUiOiJERVNFTlZPTHZFRE9SIiwiaWF0IjoxNzAwMDAwMDAwfQ.sig_elena', '192.168.1.30', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15', NOW() + INTERVAL '7 days'),
+(6, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjYsInJvbGUiOiJDT01VTSIsImlhdCI6MTcwMDAwMDAwMH0.sig_felipe', '192.168.1.35', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edge/120.0.0.0', NOW() + INTERVAL '7 days'),
+(7, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjcsInJvbGUiOiJBRE1JTiIsImlhdCI6MTcwMDAwMDAwMH0.sig_gabriela', '192.168.1.40', 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101', NOW() + INTERVAL '7 days'),
+(8, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjgsInJvbGUiOiJDT01VTSIsImlhdCI6MTcwMDAwMDAwMH0.sig_hugo', '192.168.1.45', 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_8 like Mac OS X)', NOW() + INTERVAL '7 days'),
+(9, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjksInJvbGUiOiJERVNFTlZPTHZFRE9SIiwiaWF0IjoxNzAwMDAwMDAwfQ.sig_isabela', '192.168.1.50', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/119.0.0.0', NOW() + INTERVAL '7 days'),
+(10, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEwLCJyb2xlIjoiQ09NVU0iLCJpYXQiOjE3MDAwMDAwMDB9.sig_joao', '192.168.1.55', 'Mozilla/5.0 (Linux; Android 13; Moto G84) Mobile Safari/537.36', NOW() + INTERVAL '7 days');
+
+
+-- 1. Testar tabela usuario
+SELECT * FROM usuario;
+
+-- 2. Testar tabela termo_lgpd
+SELECT * FROM termo_lgpd;
+
+-- 3. Testar tabela aplicativo
+SELECT * FROM aplicativo;
+
+-- 4. Testar tabela dispositivo
+SELECT * FROM dispositivo;
+
+-- 5. Testar tabela requisito_aplicativo
+SELECT * FROM requisito_aplicativo;
+
+-- 6. Testar tabela notificacao
+SELECT * FROM notificacao;
+
+-- 7. Testar tabela consentimento_usuario
+SELECT * FROM consentimento_usuario;
+
+-- 8. Testar tabela relatorio_divergencia
+SELECT * FROM relatorio_divergencia;
+
+-- 9. Testar tabela diagnostico_compatibilidade
+SELECT * FROM diagnostico_compatibilidade;
+
+-- 10. Testar tabela sessao_usuario
+SELECT * FROM sessao_usuario;
+
+
+select
+        a.nome AS nome_aplicativo,
+        u.nome AS nome_usuario
+FROM aplicativo a
+INNER JOIN usuario u
+ON a.fk_usuario = u.id_usuario
+ORDER BY a.nome ASC
